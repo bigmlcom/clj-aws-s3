@@ -100,9 +100,10 @@
   a String, InputStream or File (or anything that implements the ToPutRequest
   protocol)."
   [cred bucket key value]
-  (->> (put-request value)
-       (->PutObjectRequest bucket key)
-       (.putObject (s3-client cred))))
+  (let [client (s3-client cred)]
+    (->> (put-request value)
+         (->PutObjectRequest bucket key)
+         (.putObject client))))
 
 (defprotocol ^{:no-doc true} Mappable
   "Convert a value into a Clojure map."
@@ -152,7 +153,8 @@
     :bucket   - the name of the bucket
     :key      - the object's key"
   [cred bucket key]
-  (to-map (.getObject (s3-client cred) bucket key)))
+  (let [client (s3-client cred)]
+    (to-map (.getObject client bucket key))))
 
 (defn get-object-metadata
   "Get an object's metadata from a bucket. The metadata is a map with the
@@ -167,7 +169,8 @@
     :last-modified          - the last modified date
     :server-side-encryption - the server-side encryption algorithm"
   [cred bucket key]
-  (to-map (.getObjectMetadata (s3-client cred) bucket key)))
+  (let [client (s3-client cred)]
+    (to-map (.getObjectMetadata client bucket key))))
 
 (defn- map->ListObjectsRequest
   "Create a ListObjectsRequest instance from a map of values."
@@ -223,4 +226,5 @@
   ([cred bucket src-key dest-key]
      (copy-object cred bucket src-key bucket dest-key))
   ([cred src-bucket src-key dest-bucket dest-key]
-     (.copyObject (s3-client cred) src-bucket src-key dest-bucket dest-key)))
+     (let [client (s3-client cred)]
+       (.copyObject client src-bucket src-key dest-bucket dest-key))))
