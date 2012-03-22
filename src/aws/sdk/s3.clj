@@ -2,10 +2,14 @@
   "Functions to access the Amazon S3 storage service.
 
   Each function takes a map of credentials as its first argument. The
-  credentials map should contain an :access-key key and a :secret-key key."
+  credentials map should contain an :access-key key and a :secret-key key.
+
+  Optionally, you can also specify a connection timeout, in milliseconds,
+  under the :socket-timeout key."
   (:import com.amazonaws.auth.BasicAWSCredentials
            com.amazonaws.services.s3.AmazonS3Client
            com.amazonaws.AmazonServiceException
+           com.amazonaws.ClientConfiguration
            com.amazonaws.services.s3.model.ListObjectsRequest
            com.amazonaws.services.s3.model.ObjectMetadata
            com.amazonaws.services.s3.model.ObjectListing
@@ -17,13 +21,27 @@
            java.io.InputStream
            java.nio.charset.Charset))
 
-(defn- s3-client
+(def default-socket-timeout
+  "Default time, in milliseconds, until a given client connection expires."
+  (* 12 3600 1000))
+
+(def ^:private clients (atom {}))
+
+(defn- make-client
   "Create an AmazonS3Client instance from a map of credentials."
   [cred]
-  (AmazonS3Client.
-   (BasicAWSCredentials.
-    (:access-key cred)
-    (:secret-key cred))))
+  (let [client
+        (AmazonS3Client. (BasicAWSCredentials. (:access-key cred)
+                                               (:secret-key cred))
+                         (.withSocketTimeout (ClientConfiguration.)
+                                             (int (or (:socket-timeout cred)
+                                                      default-socket-timeout))))]
+    (swap! clients assoc cred client)
+    client))
+
+(defn- s3-client
+  [cred]
+  (or (@clients cred) (make-client cred)))
 
 (defn bucket-exists?
   "Returns true if the supplied bucket name already exists in S3."
@@ -100,10 +118,9 @@
   a String, InputStream or File (or anything that implements the ToPutRequest
   protocol)."
   [cred bucket key value]
-  (let [client (s3-client cred)]
-    (->> (put-request value)
-         (->PutObjectRequest bucket key)
-         (.putObject client))))
+  (->> (put-request value)
+       (->PutObjectRequest bucket key)
+       (.putObject (s3-client cred))))
 
 (defprotocol ^{:no-doc true} Mappable
   "Convert a value into a Clojure map."
@@ -153,8 +170,7 @@
     :bucket   - the name of the bucket
     :key      - the object's key"
   [cred bucket key]
-  (let [client (s3-client cred)]
-    (to-map (.getObject client bucket key))))
+  (to-map (.getObject (s3-client cred) bucket key)))
 
 (defn get-object-metadata
   "Get an object's metadata from a bucket. The metadata is a map with the
@@ -169,8 +185,7 @@
     :last-modified          - the last modified date
     :server-side-encryption - the server-side encryption algorithm"
   [cred bucket key]
-  (let [client (s3-client cred)]
-    (to-map (.getObjectMetadata client bucket key))))
+  (to-map (.getObjectMetadata (s3-client cred) bucket key)))
 
 (defn- map->ListObjectsRequest
   "Create a ListObjectsRequest instance from a map of values."
@@ -226,5 +241,4 @@
   ([cred bucket src-key dest-key]
      (copy-object cred bucket src-key bucket dest-key))
   ([cred src-bucket src-key dest-bucket dest-key]
-     (let [client (s3-client cred)]
-       (.copyObject client src-bucket src-key dest-bucket dest-key))))
+     (.copyObject (s3-client cred) src-bucket src-key dest-bucket dest-key)))
