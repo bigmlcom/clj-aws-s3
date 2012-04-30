@@ -30,12 +30,12 @@
 (defn- make-client
   "Create an AmazonS3Client instance from a map of credentials."
   [cred]
-  (let [client
-        (AmazonS3Client. (BasicAWSCredentials. (:access-key cred)
-                                               (:secret-key cred))
-                         (.withSocketTimeout (ClientConfiguration.)
-                                             (int (or (:socket-timeout cred)
-                                                      default-socket-timeout))))]
+  (let [ak (:access-key cred)
+        sk (:secret-key cred)
+        creds (when (and ak sk) (BasicAWSCredentials. ak sk))
+        tm (int (or (:socket-timeout cred) default-socket-timeout))
+        cc (.withSocketTimeout (ClientConfiguration.) tm)
+        client (AmazonS3Client. creds cc)]
     (swap! clients assoc cred client)
     client))
 
