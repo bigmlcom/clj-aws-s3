@@ -16,6 +16,8 @@
            com.amazonaws.services.s3.model.PutObjectRequest
            com.amazonaws.services.s3.model.S3Object
            com.amazonaws.services.s3.model.S3ObjectSummary
+           com.amazonaws.services.s3.transfer.TransferManager
+           com.amazonaws.services.s3.transfer.Upload
            java.io.ByteArrayInputStream
            java.io.File
            java.io.InputStream
@@ -27,15 +29,20 @@
 
 (def ^:private clients (atom {}))
 
+(defn- make-credentials [cred]
+  (let [ak (:access-key cred)
+        sk (:secret-key cred)]
+    (when (and ak sk) (BasicAWSCredentials. ak sk))))
+
 (defn- make-client
   "Create an AmazonS3Client instance from a map of credentials."
   [cred]
-  (let [ak (:access-key cred)
-        sk (:secret-key cred)
-        creds (when (and ak sk) (BasicAWSCredentials. ak sk))
-        tm (int (or (:socket-timeout cred) default-socket-timeout))
-        cc (.withSocketTimeout (ClientConfiguration.) tm)
-        client (AmazonS3Client. creds cc)]
+  (let [creds (make-credentials cred)
+        client (if-not creds
+                 (AmazonS3Client.)
+                 (let [tm (int (or (:socket-timeout cred) default-socket-timeout))
+                       cc (.withSocketTimeout (ClientConfiguration.) tm)]
+                   (AmazonS3Client. creds cc)))]
     (swap! clients assoc cred client)
     client))
 
@@ -112,6 +119,20 @@
       bucket key
       (:input-stream request)
       (map->ObjectMetadata (dissoc request :input-stream)))))
+
+(def transfer-manager
+  (memoize (fn [cred] (TransferManager. (make-credentials cred)))))
+
+(defn upload-object
+  "Uploads a file or input stream to an S3 bucket at the specified
+  key, waiting for completion."
+  [cred bucket key value]
+  (when-let [tm (transfer-manager cred)]
+    (let [^Upload upload (.upload tm (->PutObjectRequest bucket
+                                                         key
+                                                         (put-request value)))]
+      (.waitForCompletion upload)
+      true)))
 
 (defn put-object
   "Put a value into an S3 bucket at the specified key. The value can be
