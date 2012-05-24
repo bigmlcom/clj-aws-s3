@@ -13,6 +13,7 @@
            com.amazonaws.services.s3.model.ListObjectsRequest
            com.amazonaws.services.s3.model.ObjectMetadata
            com.amazonaws.services.s3.model.ObjectListing
+           com.amazonaws.services.s3.model.GetObjectRequest
            com.amazonaws.services.s3.model.PutObjectRequest
            com.amazonaws.services.s3.model.S3Object
            com.amazonaws.services.s3.model.S3ObjectSummary
@@ -189,9 +190,14 @@
     :content  - an InputStream to the content
     :metadata - a map of the object's metadata
     :bucket   - the name of the bucket
-    :key      - the object's key"
-  [cred bucket key]
-  (to-map (.getObject (s3-client cred) bucket key)))
+    :key      - the object's key
+
+  If the optional parameters 'from' and 'to' are provided, they define
+  a download byte range."
+  [cred bucket key & {:keys [from to]}]
+  (let [^GetObjectRequest req (GetObjectRequest. bucket key)]
+    (when to (.setRange req (or from 0) to))
+    (to-map (.getObject (s3-client cred) req))))
 
 (defn get-object-metadata
   "Get an object's metadata from a bucket. The metadata is a map with the
